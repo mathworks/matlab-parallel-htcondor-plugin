@@ -1,4 +1,4 @@
-function createSubmitScript(outputFilename, jobName, quotedScriptName, environmentVariables)
+function createSubmitScript(outputFilename, jobName, quotedWrapperPath, environmentVariables)
 % Create a script that sets the correct environment variables and then
 % executes the HTCondor condor_submit command.
 
@@ -23,7 +23,7 @@ for ii = 1:size(environmentVariables, 1)
 end
 
 % Generate the command to run and write it.
-commandToRun = getSubmitString(quotedScriptName);
+commandToRun = getSubmitString(quotedWrapperPath);
 fprintf(fid, '%s\n', commandToRun);
 
 end
