@@ -1,9 +1,9 @@
 function createCommunicatingSubmitDescriptionFile(outputFilename, logFile, condorLogFile, wrapperScriptName, ...
-    numberOfTasks, additionalSubmitArgs, jobDirectory, environmentVariables)
+    numberOfTasks, additionalSubmitArgs, jobDirectory)
 % Create a submit description file to be used with the
 % HTCondor condor_submit command for communicating jobs.
 
-% Copyright 2020-2022 The MathWorks, Inc.
+% Copyright 2020-2023 The MathWorks, Inc.
 
 % Split additionalSubmitArgs into separate lines
 args = split(additionalSubmitArgs, ' ');
@@ -16,8 +16,7 @@ if fid < 0
 end
 cleanup = onCleanup(@() fclose(fid));
 
-environmentVariables = [environmentVariables; {'MPIEXEC_WORKING_DIR', jobDirectory}];
-environmentString = formatEnvironmentString(environmentVariables);
+environmentString = formatEnvironmentString({'MPIEXEC_WORKING_DIR', jobDirectory});
 
 fprintf(fid, 'executable=%s\n', wrapperScriptName);
 fprintf(fid, 'Universe=parallel\n');

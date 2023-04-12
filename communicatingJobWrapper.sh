@@ -16,7 +16,7 @@
 # PARALLEL_SERVER_STORAGE_CONSTRUCTOR - used by decode function
 # PARALLEL_SERVER_JOB_LOCATION        - used by decode function
 
-# Copyright 2020-2022 The MathWorks, Inc.
+# Copyright 2020-2023 The MathWorks, Inc.
 
 # If PARALLEL_SERVER_ environment variables are not set, assign any
 # available values with form MDCE_ for backwards compatibility
@@ -30,7 +30,7 @@ PARALLEL_SERVER_DEBUG=${PARALLEL_SERVER_DEBUG:="${MDCE_DEBUG}"}
 # Condor will set TMPDIR to a folder it will create under its EXECUTE folder,
 # but on slow filesystems we might try to use the folder before we see it's
 # been created. Set TMPDIR back to /tmp here to avoid this.
-TMPDIR=/tmp
+export TMPDIR=/tmp
 
 # Find out what condor proc number we are and how many condor procs there are.
 _CONDOR_PROCNO=$_CONDOR_PROCNO
