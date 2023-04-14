@@ -1,8 +1,7 @@
-function createSubmitScript(outputFilename, jobName, quotedWrapperPath, environmentVariables)
-% Create a script that sets the correct environment variables and then
-% executes the HTCondor condor_submit command.
+function createSubmitScript(outputFilename, jobName, quotedWrapperPath)
+% Create a script that runs the HTCondor condor_submit command.
 
-% Copyright 2010-2022 The MathWorks, Inc.
+% Copyright 2010-2023 The MathWorks, Inc.
 
 dctSchedulerMessage(5, '%s: Creating submit script for %s at %s', mfilename, jobName, outputFilename);
 
@@ -14,15 +13,9 @@ if fid < 0
 end
 fileCloser = onCleanup(@() fclose(fid));
 
-% Specify Shell to use
+% Specify shell to use
 fprintf(fid, '#!/bin/sh\n');
 
-% Write the commands to set and export environment variables
-for ii = 1:size(environmentVariables, 1)
-    fprintf(fid, 'export %s=''%s''\n', environmentVariables{ii,1}, environmentVariables{ii,2});
-end
-
-% Generate the command to run and write it.
 commandToRun = getSubmitString(quotedWrapperPath);
 fprintf(fid, '%s\n', commandToRun);
 

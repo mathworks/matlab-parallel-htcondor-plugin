@@ -6,10 +6,9 @@ function independentSubmitFcn(cluster, job, environmentProperties)
 %
 % See also parallel.cluster.generic.independentDecodeFcn.
 
-% Copyright 2010-2022 The MathWorks, Inc.
+% Copyright 2010-2023 The MathWorks, Inc.
 
-% Store the current filename for the errors, warnings and
-% dctSchedulerMessages.
+% Store the current filename for the errors, warnings and dctSchedulerMessages.
 currFilename = mfilename;
 if ~isa(cluster, 'parallel.Cluster')
     error('parallelexamples:GenericHTCondor:NotClusterObject', ...
@@ -18,9 +17,22 @@ end
 
 decodeFunction = 'parallel.cluster.generic.independentDecodeFcn';
 
-if ~strcmpi(cluster.OperatingSystem, 'unix')
+clusterOS = cluster.OperatingSystem;
+if ~strcmpi(clusterOS, 'unix')
     error('parallelexamples:GenericHTCondor:UnsupportedOS', ...
-        'The function %s only supports clusters with unix OS.', currFilename)
+        'The function %s only supports clusters with the unix operating system.', currFilename)
+end
+
+% Get the correct quote and file separator for the Cluster OS.
+% This check is unnecessary in this file because we explicitly
+% checked that the ClusterOsType is unix. This code is an example
+% of how to deal with clusters that can be unix or pc.
+if strcmpi(clusterOS, 'unix')
+    quote = '''';
+    fileSeparator = '/';
+else
+    quote = '"';
+    fileSeparator = '\';
 end
 
 if isprop(cluster.AdditionalProperties, 'ClusterHost')
@@ -53,18 +65,6 @@ else
             break
         end
     end
-end
-
-% Get the correct quote and file separator for the Cluster OS.
-% This check is unnecessary in this file because we explicitly
-% checked that the ClusterOsType is unix.  This code is an example
-% of how to deal with clusters that can be unix or pc.
-if strcmpi(cluster.OperatingSystem, 'unix')
-    quote = '''';
-    fileSeparator = '/';
-else
-    quote = '"';
-    fileSeparator = '\';
 end
 
 % The job specific environment variables
@@ -110,16 +110,17 @@ else
     jobDirectoryOnCluster = remoteConnection.getRemoteJobLocation(job.ID, cluster.OperatingSystem);
 end
 
-% The job wrapper name is independentJobWrapper.sh
+% Name of the wrapper script to launch the MATLAB worker
 jobWrapperName = 'independentJobWrapper.sh';
 % The wrapper script is in the same directory as this file
 dirpart = fileparts(mfilename('fullpath'));
 localScript = fullfile(dirpart, jobWrapperName);
 % Copy the local wrapper script to the job directory
-copyfile(localScript, localJobDirectory);
+copyfile(localScript, localJobDirectory, 'f');
 
 % The script to execute on the cluster to run the job
 wrapperPath = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, jobWrapperName);
+quotedWrapperPath = sprintf('%s%s%s', quote, wrapperPath, quote);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% CUSTOMIZATION MAY BE REQUIRED %%
@@ -171,7 +172,7 @@ if useJobArrays
         numberOfTasksToUse = numel(taskIDGroupsForJobArrays{ii});
         commandsToRun{ii} = iGetCommandToRun(localJobDirectory, ...
             jobDirectoryOnCluster, fileSeparator, quote, jobName, ...
-            logFile, wrapperPath, environmentVariables, numberOfTasksToUse, ...
+            logFile, quotedWrapperPath, environmentVariables, numberOfTasksToUse, ...
             additionalSubmitArgs, condorLogFile, taskOffset);
     end
 else
@@ -206,7 +207,7 @@ else
         dctSchedulerMessage(5, '%s: Generating script for task %i', currFilename, ii);
         commandsToRun{ii} = iGetCommandToRun(localJobDirectory, ...
             jobDirectoryOnCluster, fileSeparator, quote, jobName, ...
-            logFile, wrapperPath, environmentVariables, 1, ...
+            logFile, quotedWrapperPath, environmentVariables, 1, ...
             additionalSubmitArgs, condorLogFile, 0);
     end
 end
@@ -217,13 +218,13 @@ if ~cluster.HasSharedFilesystem
     remoteConnection.startMirrorForJob(job);
 end
 
-if isprop(cluster.AdditionalProperties, 'ClusterHost')
+if strcmpi(cluster.OperatingSystem, 'unix')
     % Add execute permissions to shell scripts
     runSchedulerCommand(cluster, sprintf( ...
         'chmod u+x %s%s*.sh', jobDirectoryOnCluster, fileSeparator));
     % Convert line endings to Unix
     runSchedulerCommand(cluster, sprintf( ...
-        'dos2unix %s%s*.sh', jobDirectoryOnCluster, fileSeparator));
+        'dos2unix --allow-chown %s%s*.sh', jobDirectoryOnCluster, fileSeparator));
 end
 
 for ii=1:numel(commandsToRun)
@@ -312,29 +313,34 @@ end
 
 function commandToRun = iGetCommandToRun(localJobDirectory, ...
     jobDirectoryOnCluster, fileSeparator, quote, jobName, ...
-    logFile, wrapperPath, environmentVariables, numberOfTasks, ...
+    logFile, quotedWrapperPath, environmentVariables, numberOfTasks, ...
     additionalSubmitArgs, condorLogFile, taskOffset)
 
 % Create the scripts to submit a HTCondor job - these will be created in the job directory
 
-% Path to the submit script
-localSubmitScriptPath = sprintf('%s.sh', tempname(localJobDirectory));
-[~, submitScriptName, extension] = fileparts(localSubmitScriptPath);
-submitScriptName = [submitScriptName extension];
-submitScriptPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, submitScriptName);
+% Path to the submit script, to submit the HTCondor job using condor_submit
+localSubmitScriptPath = [tempname(localJobDirectory) '.sh'];
+[~, submitScriptName, submitScriptExt] = fileparts(localSubmitScriptPath);
+submitScriptPathOnCluster = sprintf('%s%s%s%s', jobDirectoryOnCluster, fileSeparator, submitScriptName, submitScriptExt);
 quotedSubmitScriptPathOnCluster = sprintf('%s%s%s', quote, submitScriptPathOnCluster, quote);
 
 % Path to the submit description file
-localSubmitDescriptionPath = sprintf('%s.sub', tempname(localJobDirectory));
-[~, submitDescriptionName, extension] = fileparts(localSubmitDescriptionPath);
-submitDescriptionName = [submitDescriptionName extension];
-submitDescriptionPathOnCluster = sprintf('%s%s%s%', jobDirectoryOnCluster, fileSeparator, submitDescriptionName);
+localSubmitDescriptionPath = [tempname(localJobDirectory) '.sub'];
+[~, submitDescriptionName, submitDescriptionExt] = fileparts(localSubmitDescriptionPath);
+submitDescriptionPathOnCluster = sprintf('%s%s%s%s', jobDirectoryOnCluster, fileSeparator, submitDescriptionName, submitDescriptionExt);
 quotedSubmitDescriptionPathOnCluster = sprintf('%s%s%s', quote, submitDescriptionPathOnCluster, quote);
 
+% Path to the environment wrapper, which will set the environment variables
+% for the job then execute the job wrapper
+localEnvScriptPath = [tempname(localJobDirectory) '.sh'];
+[~, envScriptName, envScriptExt] = fileparts(localEnvScriptPath);
+envScriptPathOnCluster = sprintf('%s%s%s%s', jobDirectoryOnCluster, fileSeparator, envScriptName, envScriptExt);
+
 % Generate the scripts
-createSubmitScript(localSubmitScriptPath, jobName, quotedSubmitDescriptionPathOnCluster, environmentVariables);
-createSubmitDescriptionFile(localSubmitDescriptionPath, logFile, condorLogFile, wrapperPath, ...
-    numberOfTasks, additionalSubmitArgs, taskOffset, jobDirectoryOnCluster, environmentVariables);
+createEnvironmentWrapper(localEnvScriptPath, quotedWrapperPath, environmentVariables);
+createSubmitScript(localSubmitScriptPath, jobName, quotedSubmitDescriptionPathOnCluster);
+createSubmitDescriptionFile(localSubmitDescriptionPath, logFile, condorLogFile, envScriptPathOnCluster, ...
+    numberOfTasks, additionalSubmitArgs, taskOffset, jobDirectoryOnCluster);
 
 % Create the command to run on the remote host.
 commandToRun = sprintf('sh %s', quotedSubmitScriptPathOnCluster);
