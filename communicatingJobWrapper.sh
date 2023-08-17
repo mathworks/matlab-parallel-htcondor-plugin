@@ -64,7 +64,8 @@ if [ $_CONDOR_PROCNO -eq 0 ] ; then
     fi
 
     # Construct the command to run.
-    CMD="\"${FULL_MPIEXEC}\" -bind-to core:${PARALLEL_SERVER_NUM_THREADS} ${MPI_VERBOSE} -machinefile ${MACHINE_FILE} -wdir ${MPIEXEC_WORKING_DIR} -n ${PARALLEL_SERVER_TOTAL_TASKS} \
+    CMD="\"${FULL_MPIEXEC}\" -bind-to core:${PARALLEL_SERVER_NUM_THREADS} ${MPI_VERBOSE} \
+        -machinefile ${MACHINE_FILE} -wdir ${TMPDIR} -n ${PARALLEL_SERVER_TOTAL_TASKS} \
         \"${PARALLEL_SERVER_MATLAB_EXE}\" ${PARALLEL_SERVER_MATLAB_ARGS}"
 
     # Echo the command so that it is shown in the output log.

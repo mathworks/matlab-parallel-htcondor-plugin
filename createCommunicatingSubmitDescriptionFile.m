@@ -16,15 +16,12 @@ if fid < 0
 end
 cleanup = onCleanup(@() fclose(fid));
 
-environmentString = formatEnvironmentString({'MPIEXEC_WORKING_DIR', jobDirectory});
-
 fprintf(fid, 'executable=%s\n', wrapperScriptName);
 fprintf(fid, 'Universe=parallel\n');
 fprintf(fid, 'Initialdir=%s\n', jobDirectory);
 fprintf(fid, 'output=%s\n', logFile);
 fprintf(fid, 'error=%s\n', logFile);
 fprintf(fid, 'log=%s\n', condorLogFile);
-fprintf(fid, 'environment=%s\n', environmentString);
 fprintf(fid, 'machine_count=%d\n', numberOfTasks);
 fprintf(fid, '%s\n', args{:});
 fprintf(fid, 'Queue\n');
