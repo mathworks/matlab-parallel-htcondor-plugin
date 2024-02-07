@@ -25,14 +25,18 @@ end
 
 % Get the correct quote and file separator for the Cluster OS.
 % This check is unnecessary in this file because we explicitly
-% checked that the ClusterOsType is unix. This code is an example
+% checked that the clusterOS is unix. This code is an example
 % of how to deal with clusters that can be unix or pc.
 if strcmpi(clusterOS, 'unix')
     quote = '''';
     fileSeparator = '/';
+    scriptExt = '.sh';
+    shellCmd = 'sh';
 else
     quote = '"';
     fileSeparator = '\';
+    scriptExt = '.bat';
+    shellCmd = 'cmd /c';
 end
 
 if isprop(cluster.AdditionalProperties, 'ClusterHost')
@@ -128,6 +132,9 @@ quotedWrapperPath = sprintf('%s%s%s', quote, wrapperPath, quote);
 additionalSubmitArgs = '';
 commonSubmitArgs = getCommonSubmitArgs(cluster);
 additionalSubmitArgs = strtrim(sprintf('%s %s', additionalSubmitArgs, commonSubmitArgs));
+if validatedPropValue(cluster.AdditionalProperties, 'DisplaySubmitArgs', 'logical', false)
+    fprintf('Submit arguments: %s\n', additionalSubmitArgs);
+end
 
 % Only keep and submit tasks that are not cancelled. Cancelled tasks
 % will have errors.
@@ -144,7 +151,7 @@ end
 if useJobArrays
     taskIDGroupsForJobArrays = iCalculateTaskIDGroupsForJobArrays(taskIDs, maxJobArraySize);
     
-    jobName = sprintf('Job%d',job.ID);
+    jobName = sprintf('MATLAB_R%s_Job%d', version('-release'), job.ID);
     numJobArrays = numel(taskIDGroupsForJobArrays);
     commandsToRun = cell(numJobArrays, 1);
     jobIDs = cell(numJobArrays, 1);
@@ -154,32 +161,51 @@ if useJobArrays
         environmentVariables = [variables; ...
             {'PARALLEL_SERVER_TASK_ID_OFFSET', num2str(taskOffset)}];
         
+        % Choose a file for the output
         %HTCondor will fill in JOB_ID when submitting
         logFileName = 'Task$(JOB_ID).log';
         % generate log file name for the HTCondor log
         condorLogFileName = sprintf('Job%d.condor.log',job.ID);
-        % Choose a file for the output. Please note that currently,
-        % JobStorageLocation refers to a directory on disk, but this may
-        % change in the future.
         logFile = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, logFileName);
         condorLogFile = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, condorLogFileName);
         quotedLogFile = sprintf('%s%s%s', quote, logFile, quote);
         dctSchedulerMessage(5, '%s: Using %s as log file', currFilename, quotedLogFile);
         
-        % Create a script to submit a HTCondor job - this
-        % will be created in the job directory
-        dctSchedulerMessage(5, '%s: Generating script for job array %i', currFilename, ii);
-        numberOfTasksToUse = numel(taskIDGroupsForJobArrays{ii});
-        commandsToRun{ii} = iGetCommandToRun(localJobDirectory, ...
-            jobDirectoryOnCluster, fileSeparator, quote, jobName, ...
-            logFile, quotedWrapperPath, environmentVariables, numberOfTasksToUse, ...
-            additionalSubmitArgs, condorLogFile, taskOffset);
+        % Path to the submit script, to submit the HTCondor job using condor_submit
+        submitScriptName = sprintf('submitScript%d%s', ii, scriptExt);
+        localSubmitScriptPath = sprintf('%s%s%s', localJobDirectory, fileSeparator, submitScriptName);
+        submitScriptPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, submitScriptName);
+        quotedSubmitScriptPathOnCluster = sprintf('%s%s%s', quote, submitScriptPathOnCluster, quote);
+        
+        % Path to the submit description file
+        submitDescriptionName = sprintf('submitDescription%d.sub', ii);
+        localSubmitDescriptionPath = sprintf('%s%s%s', localJobDirectory, fileSeparator, submitDescriptionName);
+        submitDescriptionPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, submitDescriptionName);
+        quotedSubmitDescriptionPathOnCluster = sprintf('%s%s%s', quote, submitDescriptionPathOnCluster, quote);
+        
+        % Path to the environment wrapper, which will set the environment variables
+        % for the job then execute the job wrapper
+        envScriptName = sprintf('environmentWrapper%d%s', ii, scriptExt);
+        localEnvScriptPath = sprintf('%s%s%s', localJobDirectory, fileSeparator, envScriptName);
+        envScriptPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, envScriptName);
+        
+        % Create the scripts to submit a HTCondor job.
+        % These will be created in the job directory.
+        dctSchedulerMessage(5, '%s: Generating scripts for job array %d', currFilename, ii);
+        createEnvironmentWrapper(localEnvScriptPath, quotedWrapperPath, environmentVariables);
+        createSubmitScript(localSubmitScriptPath, jobName, quotedSubmitDescriptionPathOnCluster);
+        createSubmitDescriptionFile(localSubmitDescriptionPath, logFile, condorLogFile, envScriptPathOnCluster, ...
+            numel(taskIDGroupsForJobArrays{ii}), additionalSubmitArgs, taskOffset, jobDirectoryOnCluster);
+        
+        % Create the command to run on the cluster
+        commandsToRun{ii} = sprintf('%s %s', shellCmd, quotedSubmitScriptPathOnCluster);
     end
 else
     % Do not use job arrays and submit each task individually.
     taskLocations = environmentProperties.TaskLocations(isPendingTask);
     jobIDs = cell(1, numberOfTasks);
     commandsToRun = cell(numberOfTasks, 1);
+    
     % Loop over every task we have been asked to submit
     for ii = 1:numberOfTasks
         taskLocation = taskLocations{ii};
@@ -200,15 +226,36 @@ else
         dctSchedulerMessage(5, '%s: Using %s as log file', currFilename, quotedLogFile);
         
         % Submit one task at a time
-        jobName = sprintf('Job%d.%d', job.ID, taskIDs(ii));
+        jobName = sprintf('MATLAB_R%s_Job%d.%d', version('-release'), job.ID, taskIDs(ii));
         
-        % Create a script to submit a HTCondor job - this will be created in
-        % the job directory
-        dctSchedulerMessage(5, '%s: Generating script for task %i', currFilename, ii);
-        commandsToRun{ii} = iGetCommandToRun(localJobDirectory, ...
-            jobDirectoryOnCluster, fileSeparator, quote, jobName, ...
-            logFile, quotedWrapperPath, environmentVariables, 1, ...
-            additionalSubmitArgs, condorLogFile, 0);
+        % Path to the submit script, to submit the HTCondor job using condor_submit
+        submitScriptName = sprintf('submitScript%d%s', ii, scriptExt);
+        localSubmitScriptPath = sprintf('%s%s%s', localJobDirectory, fileSeparator, submitScriptName);
+        submitScriptPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, submitScriptName);
+        quotedSubmitScriptPathOnCluster = sprintf('%s%s%s', quote, submitScriptPathOnCluster, quote);
+        
+        % Path to the submit description file
+        submitDescriptionName = sprintf('submitDescription%d.sub', ii);
+        localSubmitDescriptionPath = sprintf('%s%s%s', localJobDirectory, fileSeparator, submitDescriptionName);
+        submitDescriptionPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, submitDescriptionName);
+        quotedSubmitDescriptionPathOnCluster = sprintf('%s%s%s', quote, submitDescriptionPathOnCluster, quote);
+        
+        % Path to the environment wrapper, which will set the environment variables
+        % for the job then execute the job wrapper
+        envScriptName = sprintf('environmentWrapper%d%s', ii, scriptExt);
+        localEnvScriptPath = sprintf('%s%s%s', localJobDirectory, fileSeparator, envScriptName);
+        envScriptPathOnCluster = sprintf('%s%s%s', jobDirectoryOnCluster, fileSeparator, envScriptName);
+        
+        % Create the scripts to submit a HTCondor job.
+        % These will be created in the job directory.
+        dctSchedulerMessage(5, '%s: Generating scripts for task %d', currFilename, ii);
+        createEnvironmentWrapper(localEnvScriptPath, quotedWrapperPath, environmentVariables);
+        createSubmitScript(localSubmitScriptPath, jobName, quotedSubmitDescriptionPathOnCluster);
+        createSubmitDescriptionFile(localSubmitDescriptionPath, logFile, condorLogFile, envScriptPathOnCluster, ...
+            1, additionalSubmitArgs, 0, jobDirectoryOnCluster);
+        
+        % Create the command to run on the cluster
+        commandsToRun{ii} = sprintf('%s %s', shellCmd, quotedSubmitScriptPathOnCluster);
     end
 end
 
@@ -309,41 +356,6 @@ end
 % HTCondor has no upper bound on job array size
 useJobArrays = true;
 maxJobArraySize = inf;
-end
-
-function commandToRun = iGetCommandToRun(localJobDirectory, ...
-    jobDirectoryOnCluster, fileSeparator, quote, jobName, ...
-    logFile, quotedWrapperPath, environmentVariables, numberOfTasks, ...
-    additionalSubmitArgs, condorLogFile, taskOffset)
-
-% Create the scripts to submit a HTCondor job - these will be created in the job directory
-
-% Path to the submit script, to submit the HTCondor job using condor_submit
-localSubmitScriptPath = [tempname(localJobDirectory) '.sh'];
-[~, submitScriptName, submitScriptExt] = fileparts(localSubmitScriptPath);
-submitScriptPathOnCluster = sprintf('%s%s%s%s', jobDirectoryOnCluster, fileSeparator, submitScriptName, submitScriptExt);
-quotedSubmitScriptPathOnCluster = sprintf('%s%s%s', quote, submitScriptPathOnCluster, quote);
-
-% Path to the submit description file
-localSubmitDescriptionPath = [tempname(localJobDirectory) '.sub'];
-[~, submitDescriptionName, submitDescriptionExt] = fileparts(localSubmitDescriptionPath);
-submitDescriptionPathOnCluster = sprintf('%s%s%s%s', jobDirectoryOnCluster, fileSeparator, submitDescriptionName, submitDescriptionExt);
-quotedSubmitDescriptionPathOnCluster = sprintf('%s%s%s', quote, submitDescriptionPathOnCluster, quote);
-
-% Path to the environment wrapper, which will set the environment variables
-% for the job then execute the job wrapper
-localEnvScriptPath = [tempname(localJobDirectory) '.sh'];
-[~, envScriptName, envScriptExt] = fileparts(localEnvScriptPath);
-envScriptPathOnCluster = sprintf('%s%s%s%s', jobDirectoryOnCluster, fileSeparator, envScriptName, envScriptExt);
-
-% Generate the scripts
-createEnvironmentWrapper(localEnvScriptPath, quotedWrapperPath, environmentVariables);
-createSubmitScript(localSubmitScriptPath, jobName, quotedSubmitDescriptionPathOnCluster);
-createSubmitDescriptionFile(localSubmitDescriptionPath, logFile, condorLogFile, envScriptPathOnCluster, ...
-    numberOfTasks, additionalSubmitArgs, taskOffset, jobDirectoryOnCluster);
-
-% Create the command to run on the remote host.
-commandToRun = sprintf('sh %s', quotedSubmitScriptPathOnCluster);
 end
 
 function jobID = iSubmitJobUsingCommand(cluster, job, commandToRun)

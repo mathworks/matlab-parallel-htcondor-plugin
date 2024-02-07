@@ -71,7 +71,7 @@ end
 
 function commonSubmitArgs = iAppendRequiredArgument(commonSubmitArgs, ap, propName, propType, submitPattern, errMsg) %#ok<DEFNU>
 % Helper fcn to append a required scheduler option to the submit string.
-% An error is thrown if the property is not specified in AdditionalProperties.
+% An error is thrown if the property is not specified in AdditionalProperties or is empty.
 % Inputs:
 %  commonSubmitArgs: submit string to append to
 %  ap: AdditionalProperties object
@@ -86,6 +86,12 @@ if ~isprop(ap, propName)
         errorText = [errorText newline errMsg];
     end
     error('parallelexamples:GenericHTCondor:MissingAdditionalProperties', errorText);
+elseif isempty(ap.(propName))
+    errorText = sprintf('Required field %s is empty in AdditionalProperties.', propName);
+    if nargin > 5
+        errorText = [errorText newline errMsg];
+    end
+    error('parallelexamples:GenericHTCondor:EmptyAdditionalProperties', errorText);
 end
 commonSubmitArgs = iAppendArgument(commonSubmitArgs, ap, propName, propType, submitPattern);
 end
