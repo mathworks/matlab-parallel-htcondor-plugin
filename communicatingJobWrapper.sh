@@ -16,7 +16,7 @@
 # PARALLEL_SERVER_STORAGE_CONSTRUCTOR - used by decode function
 # PARALLEL_SERVER_JOB_LOCATION        - used by decode function
 
-# Copyright 2020-2023 The MathWorks, Inc.
+# Copyright 2020-2024 The MathWorks, Inc.
 
 # If PARALLEL_SERVER_ environment variables are not set, assign any
 # available values with form MDCE_ for backwards compatibility
@@ -31,6 +31,10 @@ PARALLEL_SERVER_DEBUG=${PARALLEL_SERVER_DEBUG:="${MDCE_DEBUG}"}
 # but on slow filesystems we might try to use the folder before we see it's
 # been created. Set TMPDIR back to /tmp here to avoid this.
 export TMPDIR=/tmp
+PARALLEL_SERVER_GENVLIST="${PARALLEL_SERVER_GENVLIST},TMPDIR"
+
+# Other environment variables to forward
+PARALLEL_SERVER_GENVLIST="${PARALLEL_SERVER_GENVLIST},HOME,USER"
 
 # Find out what condor proc number we are and how many condor procs there are.
 _CONDOR_PROCNO=$_CONDOR_PROCNO
@@ -38,10 +42,9 @@ _CONDOR_NPROCS=$_CONDOR_NPROCS
 
 # Remove the contact file, so if we are held and released
 # it can be recreated anew
-
 rm -f $CONDOR_CONTACT_FILE
 
-#add libexec to path
+# Add libexec to path
 PATH=`condor_config_val libexec`/:$PATH
 
 if [ $_CONDOR_PROCNO -eq 0 ] ; then
@@ -64,9 +67,15 @@ if [ $_CONDOR_PROCNO -eq 0 ] ; then
     fi
 
     # Construct the command to run.
-    CMD="\"${FULL_MPIEXEC}\" -bind-to core:${PARALLEL_SERVER_NUM_THREADS} ${MPI_VERBOSE} \
-        -machinefile ${MACHINE_FILE} -wdir ${TMPDIR} -n ${PARALLEL_SERVER_TOTAL_TASKS} \
-        \"${PARALLEL_SERVER_MATLAB_EXE}\" ${PARALLEL_SERVER_MATLAB_ARGS}"
+    CMD="\"${FULL_MPIEXEC}\" \
+        -genvlist ${PARALLEL_SERVER_GENVLIST} \
+        -bind-to core:${PARALLEL_SERVER_NUM_THREADS} \
+        ${MPI_VERBOSE} \
+        -machinefile ${MACHINE_FILE} \
+        -wdir ${TMPDIR} \
+        -n ${PARALLEL_SERVER_TOTAL_TASKS} \
+        \"${PARALLEL_SERVER_MATLAB_EXE}\" \
+        ${PARALLEL_SERVER_MATLAB_ARGS}"
 
     # Echo the command so that it is shown in the output log.
     echo $CMD

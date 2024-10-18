@@ -1,7 +1,7 @@
 function createSubmitScript(outputFilename, jobName, quotedWrapperPath)
 % Create a script that runs the HTCondor condor_submit command.
 
-% Copyright 2010-2023 The MathWorks, Inc.
+% Copyright 2010-2024 The MathWorks, Inc.
 
 dctSchedulerMessage(5, '%s: Creating submit script for %s at %s', mfilename, jobName, outputFilename);
 
